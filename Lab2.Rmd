@@ -1,0 +1,24 @@
+---
+title: "Lab2- Group A 13"
+author: "Arash Haratian, Connor Turner, Yi Hung Chen"
+date: "`r Sys.Date()`"
+
+output:
+  pdf_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 55), tidy = TRUE) #require package"formatR"
+```
+
+
+
+## Assignment 1
+```{r, include=FALSE}
+## Attaching Packages
+library(tidyverse)
+```
+
+
