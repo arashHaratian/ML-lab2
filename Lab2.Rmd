@@ -9,16 +9,240 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 55), tidy = TRUE) #require package"formatR"
 ```
 
 
 
 ## Assignment 1
-```{r, include=FALSE}
+
+
+
+
+## Assignment 2
+
+```{r}
 ## Attaching Packages
 library(tidyverse)
+library(tree)
+```
+
+In this assignment we are given the data related with direct marketing campaigns of a Portuguese banking institution, and we have to use decision tree model to classify the target variable `y` using 15 features. The target variable has two levels: `yes` and `no`.
+
+```{r}
+bank_full <- read.csv2("./data/bank-full.csv")
+bank_full <- bank_full %>%
+  select(!duration) %>%
+  mutate(across(where(is.character), as.factor))
+
+n <- nrow(bank_full)
+set.seed(12345)
+train_idx <- sample(seq_len(n), floor(n * 0.4))
+train_data <- bank_full[train_idx, ]
+remainder_idx <- setdiff(seq_len(n), train_idx)
+set.seed(12345)
+valid_idx <- sample(remainder_idx, floor(n * 0.3))
+valid_data <- bank_full[valid_idx, ]
+test_idx <- setdiff(remainder_idx, valid_idx)
+test_data <- bank_full[test_idx, ]
 ```
 
 
+We begin by splitting data 40/30/30 into training, validation, and testing sets. We then use the training data to train 3 different decision trees with 3 different settings:
+
+**1. First Decision Tree:**
+
+The first model is a decision tree with default settings of the `tree::tree()`. The default values are as follows:
+- `mincut = 5`
+- `minsize = 10`
+- `mindev = 0.01`
+
+```{r}
+tree_default <- tree(y~., train_data)
+y_hat_train <- predict(tree_default, train_data, type = "class")
+cm_train <- table(train_data$y, y_hat_train)
+error_train_a <- 1- (sum(diag(cm_train))/nrow(train_data))
+# mean(y_hat_train != train_data$y)
+y_hat_train <- predict(tree_default, valid_data, type = "class")
+cm_valid <- table(valid_data$y, y_hat_train)
+error_test_a <- 1- (sum(diag(cm_valid))/nrow(valid_data))
+```
+
+The training and test errors for this model are `r round(error_train_a, 4)` and `r round(error_test_a, 4)` respectively.
+
+**2.  Second Decision Tree:**
+The second model is a decision tree with a constraint of the size of each node; In fact, the smallest allowed node size should be equal to 7000. To set this setting, we should pass `tree::tree.control(minsize = 7000)` to the `control` argument of the `tree::tree()`.
+
+```{r}
+tree_minsize <- tree(y~., train_data, control = tree.control(nrow(train_data), minsize = 7000))
+y_hat_train <- predict(tree_minsize, train_data, type = "class")
+cm_train <- table(train_data$y, y_hat_train)
+error_train_b <- 1- (sum(diag(cm_train))/nrow(train_data))
+# mean(y_hat_train != train_data$y)
+y_hat_train <- predict(tree_minsize, valid_data, type = "class")
+cm_valid <- table(valid_data$y, y_hat_train)
+error_test_b <- 1- (sum(diag(cm_valid))/nrow(valid_data))
+```
+
+The training and test errors for the second model are `r round(error_train_b, 4)` and `r round(error_test_b, 4)` respectively.
+
+
+**3. Third Decision Tree:**
+
+The third model is a decision we want to set the minimum deviance to 0.0005, and it can be done in the same way as the second model, by passing `tree::tree.control(mindev = 0.0005)` to the `control` argument of the `tree::tree()`.
+
+```{r}
+tree_mindev <- tree(y~., train_data, control = tree.control(nrow(train_data), mindev = 0.0005))
+y_hat_train <- predict(tree_mindev, train_data, type = "class")
+cm_train <- table(train_data$y, y_hat_train)
+error_train_c <- 1- (sum(diag(cm_train))/nrow(train_data))
+# mean(y_hat_train != train_data$y)
+y_hat_train <- predict(tree_mindev, valid_data, type = "class")
+cm_valid <- table(valid_data$y, y_hat_train)
+error_test_c <- 1- (sum(diag(cm_valid))/nrow(valid_data))
+```
+
+The training and test errors for the third model are `r round(error_train_c, 4)` and `r round(error_test_c, 4)` respectively.
+
+different values  | First Model | Second Model | Third Model
+------------- | ------------- | ------------- | -------------
+Size of Trees  |`r summary(tree_default)$size`|`r summary(tree_minsize)$size`|`r summary(tree_mindev)$size`
+Number of feature used|`r summary(tree_default)$used %>% length`|`r summary(tree_minsize)$used %>% length`|`r summary(tree_mindev)$used %>% length`
+Training Error  |`r round(error_train_a, 4)` |`r round(error_train_b, 4)`|`r round(error_train_c, 4)`
+Testing Error  |`r round(error_test_a, 4)` |`r round(error_test_b, 4)`|`r round(error_test_c, 4)`
+
+Based on the information in the table above, first model and second model have the same error rate. However, both the number of terminal nodes and number of feature used to split for the second model is 1 less that the first model.
+In our opinion the second model is more proper for interpreting the structure of the tree, but for predicting new values, the first model may preform better as it is more complex compare to the second model. The third model is overfitted on the training data and it is too complex; as the result, it may preform poorly for predicting new values.
+
+
+Now we can prune the more complex model, in this case the third model(minimum deviance to 0.0005), to reach to a more optimal model. By doing so, we may end up with a model which captures the general structure better than other models while it is not overfitted on the training dataset. In other words, by pruning a fully-grown tree, we are mitigating the overfitting (or high variance) problem. The following figure shows the dependence of deviances for the training and the validation data in the number of leaves:
+
+```{r}
+
+train_dev <- vector("numeric", 50)
+valid_dev <- vector("numeric", 50)
+
+for(num_leaves in 2:50){
+  prune_tree <- prune.tree(tree_mindev, best = num_leaves)
+  valid_tree <- predict(prune_tree, newdata = valid_data, type = "tree")
+  train_dev[num_leaves] <- deviance(prune_tree)
+  valid_dev[num_leaves] <- deviance(valid_tree)
+}
+
+data.frame("num_of_leaves" = 2:50, "train" = train_dev[2:50], "valid" = valid_dev[2:50]) %>%
+  ggplot() +
+  geom_line(aes(num_of_leaves, train, color = "Train Deviance")) +
+  geom_point(aes(num_of_leaves, train, color = "Train Deviance")) +
+  geom_line(aes(num_of_leaves, valid, color = "Validation Deviance")) +
+  geom_point(aes(num_of_leaves, valid, color = "Validation Deviance")) +
+  labs(x = "Number of Leaves", y = "deviance", color = "dataset")
+best_num_leaves <- which.min(valid_dev[2:50]) + 1
+optimal_tree <- prune.tree(tree_mindev, best = best_num_leaves)
+```
+
+As it is evidence in the plot, the deviance of the training data set is decreasing by increasing the number of leaves(complexity), whereas the deviance of the validation data set is decreasing at first but then it starts to increase. This denotes that the model will overfit the by increasing the number of terminal nodes.
+It worth to note that the deviance of the training data set is higher than validation dataset because deviance is proportional to the number of observations in the dataset.
+
+The best number of the leaves is `r best_num_leaves`.
+
+The important variables in the optimal tree are as follows:
+- `poutcome`
+- `month`
+- `contact`
+- `pdays`
+- `age`
+- `day`
+- `balance`
+- `housing`
+- `job`
+Also we can see the the structure of the tree:
+```{r}
+optimal_tree
+```
+
+Based on the structure of the tree, the first variable that has been used to split the data, is `poutcome` which is the outcome of the previous marketing campaign. Also it is worth to note that the variable `month` (last contact month of year) has been used frequently for splitting the data.
+
+
+For evaluating the performance of the optimal tree we can check the confusion matrix, accuracy and F1-score for the testing data. F1-score is better metric to measure the performance of the model as the target variable `y` is unbalanced.
+
+```{r}
+y_hat <- predict(optimal_tree, newdata = test_data, type = "class")
+
+cm_test <- table(test_data$y, y_hat)
+acc <- sum(diag(cm_test))/nrow(test_data)
+
+TP <- cm_test[2, 2]
+FP <- cm_test[1, 2]
+FN <- cm_test[2, 1]
+
+F1_score <- TP / (TP + 0.5 * (FP + FN))
+
+knitr::kable(cm_test, label = "the confusion matrix of optimal tree on test data")
+```
+
+The accuracy is `r round(acc, 4)` which indicates that model is very accurate in predicting new values. However, as mentioned before, since the target variable has mostly `no` values, a model which predicts all the values as `no` will yield a high accuracy as well. A good model is a model which can predict `yes` more accurately in this dataset. F1-score for this model is `r F1_score` which is very low and it indcates that model is not preforming good in predicting true positives.
+
+One way to increase the performance of the model is to use a loss matrix to predict the values based on their probabilities (instead of using 0.5 as threshold, we are using `1/5`). In other words, we are penalizing the model if it predicts positives wrongly. The confusion matrix for the testing data and using the loss matrix is as follows:
+
+
+```{r}
+y_hat <- predict(optimal_tree, newdata = test_data)
+y_hat <- as.factor(ifelse(y_hat[,2] / y_hat[,1] > 1/5, 1, 0))
+
+
+cm_test <- table(test_data$y, y_hat)
+acc <- sum(diag(cm_test))/nrow(test_data)
+
+TP <- cm_test[2, 2]
+FP <- cm_test[1, 2]
+FN <- cm_test[2, 1]
+
+F1_score <- TP / (TP + 0.5 * (FP + FN))
+
+knitr::kable(cm_test, label = "the confusion matrix of optimal tree on test data with loss matrix")
+```
+
+The new F1-score is `r F1_score` which means now the model predict true positives more accurately although the accuracy has decreased to `r round(acc, 4)`.
+
+One way to compare two different models is to use a ROC curve. Here we want to compare the optimal decision tree with a logistic regression.
+
+
+```{r}
+y_hat_prob_tree <- predict(optimal_tree, test_data)
+y_hat_prob_tree <- y_hat_prob_tree[, "yes"]
+
+glm_model <- glm(y~., family = "binomial",  data = train_data)
+y_hat_prob_glm <- predict(glm_model, test_data, type = "response")
+
+pis <- seq(0.05, 0.95, by =0.05)
+
+ROC_tree <- matrix(nrow = length(pis), ncol = 2)
+ROC_glm <- matrix(nrow = length(pis), ncol = 2)
+
+for(i in seq_along(pis)){
+  
+  y_hat_tree <- factor(ifelse(y_hat_prob_tree > pis[i], "yes", "no"), levels = c("no", "yes"))
+  cm_test <- table(test_data$y, y_hat_tree)
+  TP <- cm_test[2, 2]
+  FP <- cm_test[1, 2]
+  ROC_tree[i, 1] <- FP / sum(cm_test[1,])
+  ROC_tree[i, 2] <- TP / sum(cm_test[2,])
+  
+  y_hat_glm <- factor(ifelse(y_hat_prob_glm > pis[i], "yes", "no"), levels = c("no", "yes"))
+  cm_test <- table(test_data$y, y_hat_glm)
+  TP <- cm_test[2, 2]
+  FP <- cm_test[1, 2]
+  ROC_glm[i, 1] <- FP / sum(cm_test[1,])
+  ROC_glm[i, 2] <- TP / sum(cm_test[2,])
+  
+}
+
+plot(ROC_tree, type = "l", col = "blue", xlim = c(0, 0.8), ylim = c(0, 1), xlab = "FPR", ylab = "TPR")
+lines(ROC_glm, col = "red")
+legend(0, 1, legend=c("GLM", "Decision Tree"),
+       col=c("red", "blue"), lty = 1, cex = 0.8)
+```
+Based on the ROC curve, both models are almost preform in the same way, but decision tree is slightly better. For the same value or $\pi$ and same value of False Positive Rate (FPR), the decision tree has higher value of True Positive Rate.
+
+The precision-recall curve is a better choice to compare two models as the classes of target data is imbalanced. The model which has the higher recall for the same value of precision, is more accurate to predict positive values.
