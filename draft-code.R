@@ -202,7 +202,7 @@ F1_score
 # 2-5
 
 # optim_tree_loss <- tree(y~., train_data, weights = c(0,5,1,0))
-optim_tree_loss <- prune.tree(tree_mindev, best = 21, loss = matrix(c(0, 5, 1, 0), nrow = 2))
+# optim_tree_loss <- prune.tree(tree_mindev, best = 21, loss = matrix(c(0, 5, 1, 0), nrow = 2))
 # y_hat <- predict(optim_tree_loss, newdata = test_data, type = "class")
 
 # train_dev <- vector("numeric", 50)
@@ -262,10 +262,10 @@ y_hat_prob_tree <- y_hat_prob_tree[, "yes"]
 glm_model <- glm(y~., family = "binomial",  data = train_data)
 y_hat_prob_glm <- predict(glm_model, test_data, type = "response")
 
-pis <- seq(0.05, 0.95, by =0.05)
+pis <- seq(0, 1, by =0.05)
 
-ROC_tree <- matrix(nrow = 19, ncol = 2)
-ROC_glm <- matrix(nrow = 19, ncol = 2)
+ROC_tree <- matrix(nrow = length(pis), ncol = 2)
+ROC_glm <- matrix(nrow = length(pis), ncol = 2)
 
 for(i in seq_along(pis)){
   
