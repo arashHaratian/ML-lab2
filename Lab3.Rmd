@@ -1,0 +1,466 @@
+---
+title: "Machine Learning block 1 Lab2 Group A13"
+author: "Group A13: Arash Haratian, Connor Turner, Yi Hung Chen"
+date: "2022-11-30"
+output: pdf_document
+---
+
+**Statement of Contribution:** *Assignment 1 was contributed by Yi Hung, Assignment 2 was contributed by Arash, and Assignment 3 was contributed by Connor. Each assignment was then discussed in detail with the group before piecing together each secton of the final report.*
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 55), tidy = TRUE) #require package"formatR"
+```
+
+# Assignment 1. Explicit regularization
+  
+For this assignment, we are given data "tecator.csv" that contains the results of study aimed to investigate whether a near
+infrared absorbance spectrum can be used to predict the fat content of samples of meat. 
+  
+#### Q1.  
+We begin by divide data randomly to train and test set(50/50). We then use the training data to train a linear regression model with all the absorbance characteristics (Channels) as features. Below is the underlying probabilistic model of linear regression
+
+
+$$y=\theta_0+\theta_1x_1+\theta_2x_2+...+\theta_{100}x_{100}+\epsilon$$   $$y|x\sim N(\theta^Tx,\sigma^2)$$  
+
+where 
+$$y=Fat$$ $$ \theta={\theta_0,...,\theta_{100}}$$ $$ x=\{ 1,Channel_1,Channel_2,...,Channel_{100} \}$$ $$ \epsilon \ is\ the\ error\ term$$  
+
+
+```{r,echo=FALSE,message=FALSE}
+rm(list=ls())
+library(glmnet)
+# Split and Prepare Data
+# --------------------------------------------------
+# Split the Data Into Training and Testing Data
+# (50/50):
+tecator <- read.csv("tecator.csv")
+set.seed(12345)
+n = nrow(tecator)
+id = sample(1:n, floor(n * 0.5))
+train = tecator[id, ]
+test = tecator[-id, ]
+
+#=====Fit Linear Regression=====
+lm_tecator <- lm(formula=Fat~.-Protein-Moisture-Sample,data=train)
+
+train_fitvalues <- lm_tecator$fitted.values
+test_predict <- predict(lm_tecator, test)
+
+
+MSE_train <- mean(lm_tecator$residuals^2)
+MSE_test <- mean((test$Fat-test_predict)^2)
+
+```  
+We estimate mean squared errors(MSE) for both training data and testing data. We obtain `r MSE_train` for training data and `r MSE_test` for testing data. The large MSE on testing data indicates the linear regression model is overfitting. To improve this, we are going to use Lasso and Ridge regression in this assignment.
+
+
+    
+#### Q2.
+We then switch to use LASSO regression model. Which the cost function that should be optimized is.
+$$\hat{\theta^{lasso}} = \{\frac{1}{n}\sum_{i = 1}^{n}(y_i-\theta_0-\sum_{j = 1}^{p}\theta_jx_{ij})^2 + \lambda\sum_{j = 1}^{p}|\theta_j| \}$$  
+
+#### Q3.
+We fit the LASSO regression model to the training data. The dependency of the regression coefficients on the log($\lambda$) is shown below in Figure 1. As the plot shown, the LASSO will drop some coefficients as $\lambda$ increase (set the values to 0). Interestingly, when $\lambda$ change, some coefficient will reappear.  
+
+```{r,echo=FALSE,fig.align = "center",out.width = "50%",results="hide"}
+#=====Lasso=====
+  #Make argument in the format that glmnet can use (data matrix for x)
+  x_name <- colnames(tecator)[-1]
+  x_name <- x_name[-102]
+  x_name <- x_name[-102]
+  x_name <- x_name[-101]
+  x <- data.matrix(train[, x_name])
+  y <- train$Fat
+  #Train Lasso 
+  lasso_tecator <- glmnet(x=x,y=y, alpha = 1)
+  
+  plot(lasso_tecator,xvar="lambda",label = TRUE,
+       main = "Figure 1:\n\ Dependence of Lasso Regression coefficients on log(lambda) \n\n")+abline(v = -0.05)+abline(v = -0.35)
+  
+  #pick lambda for 3 features
+  coef_matrix <- as.matrix(coef(lasso_tecator))
+  coef_matrix <- coef_matrix!=0
+  coef_matrix <- colSums(coef_matrix)
+  lamda_index <- which(coef_matrix == 4) # we use 4 because there is alway intercept with in the matric
+  lambda_3features <- lasso_tecator$lambda[lamda_index] # the lamda for 3 features
+
+```  
+
+  
+If we want to select a model with only three features, we can choose $\lambda$ around `r exp(-0.05)` to `r exp(-0.35)`.(Note: The range is choosen by dierectly observed with the plot(vertical lines). Additionally, by using default lambdas in glmnet, we calculated $\lambda$ = `r lambda_3features` will gives coefficient for only  three features. However, as the plot shown, the lambdas should be in a range not district values.)
+  
+#### Q4.
+
+We then repeat the privious step, but instead of using Lasso Regression, we use Ridge Regression to compare both method. 
+  
+As the Figure 2 shown. Compare to Lasso Regression, the penalty term of Ridge Regression will not "collapse" to zero. Also, the coefficient value of Ridge Regression scale slower when lambda increase compared to Lasso Regression.    
+```{r,echo=FALSE,fig.align = "center",out.width = "50%",results="hide"}
+#=====Ridge======
+ridge_tecator <- glmnet(x, y, alpha = 0)
+plot(ridge_tecator,xvar="lambda",label = TRUE,
+      main = "Figure 2:\n\ Dependence of Ridge Regression coefficients on log(lambda) \n\n")
+
+```
+  
+
+
+#### Q5.  
+We use cv.glmnet function to do cross-validation for Lasso model. We do not specify how many folds being use, instead we use the default number of folds to compute. As the Figure 3 shown, the MSE start increasing dramatically as log($\lambda$) approach -2, which means the the model become less usable, this might result from too many coefficient being ditched by Lasso regression as lambda increase.
+
+```{r,echo=FALSE,fig.align = "center",out.width = "50%",results="hide"}
+cv_lasso_tecator <- cv.glmnet(x=x,y=y, alpha = 1)
+
+plot(cv_lasso_tecator,
+     main = "Figure 3:\n Dependence of the Lasso CV score on log lambda\n\n")
+
+best_lambda <- cv_lasso_tecator$lambda.min
+best_model <- glmnet(x, y, alpha = 1, lambda = best_lambda)
+variables <- coef(best_model)
+variables <- as.vector(variables!= 0)
+coef_index <- which(match(variables,TRUE) == 1)
+coef_index <- coef_index[-1]
+
+coef_get_select <- rownames(coef(best_model))[coef_index]
+
+```   
+  
+We obtain the best $\lambda$ =`r best_lambda` with `r length(coef_get_select)` variables chosen(`r  coef_get_select`). According to Figure 3, the optimal $\lambda$ (log($\lambda$) =`r log(best_lambda)`)  is not statistically significantly better than log$\lambda$ = -4, as they have similar MSE.
+```{r,echo=FALSE,results="hide"} 
+
+#Make argument in the format that glmnet can use for test set (data matrix for new_x)
+new_x <- as.matrix(test[, x_name])
+
+MSE_best_test <- mean((test$Fat-predict(best_model,new_x))^2)
+```   
+  
+Finally, we plot the scatter plot (Figure 4) with true "Fat" value from test data on the X-axis and predict value on the Y-axis. We can observed that the prediction is much  better compare to linear regression(MSE = `r MSE_best_test`). Note: We also include a line x=y which indicate where the perfect prediction should lay on.
+```{r,echo=FALSE,fig.align = "center",results="hide"} 
+
+#Make argument in the format that glmnet can use (data matrix for new_x)
+new_x <- as.matrix(test[, x_name])
+
+plot_df <- data.frame(cbind(predict(best_model,new_x),test$Fat))# Scatter plot of original test versus predicted test values
+p <- plot(plot_df,
+          main = "Figure 4:Prediction of using Optimal Lasso on True test data\n",
+          xlab = "Ture Fat value",
+          ylab = "Predicted Fat value")+
+  abline(a=0, b=1) # Adding abline x=y to show if the prediction isperfect. 
+p 
+
+```  
+
+
+
+## Assignment 2
+
+```{r}
+## Attaching Packages
+library(tidyverse)
+library(tree)
+```
+
+In this assignment we are given the data related with direct marketing campaigns of a Portuguese banking institution, and we have to use decision tree model to classify the target variable `y` using 15 features. The target variable has two levels: `yes` and `no`.
+
+```{r}
+bank_full <- read.csv2("./data/bank-full.csv")
+bank_full <- bank_full %>%
+  select(!duration) %>%
+  mutate(across(where(is.character), as.factor))
+
+n <- nrow(bank_full)
+set.seed(12345)
+train_idx <- sample(seq_len(n), floor(n * 0.4))
+train_data <- bank_full[train_idx, ]
+remainder_idx <- setdiff(seq_len(n), train_idx)
+set.seed(12345)
+valid_idx <- sample(remainder_idx, floor(n * 0.3))
+valid_data <- bank_full[valid_idx, ]
+test_idx <- setdiff(remainder_idx, valid_idx)
+test_data <- bank_full[test_idx, ]
+```
+
+
+We begin by splitting data 40/30/30 into training, validation, and testing sets. We then use the training data to train 3 different decision trees with 3 different settings:
+
+**1. First Decision Tree:**
+
+The first model is a decision tree with default settings of the `tree::tree()`. The default values are as follows:
+- `mincut = 5`
+- `minsize = 10`
+- `mindev = 0.01`
+
+```{r}
+tree_default <- tree(y~., train_data)
+y_hat_train <- predict(tree_default, train_data, type = "class")
+cm_train <- table(train_data$y, y_hat_train)
+error_train_a <- 1- (sum(diag(cm_train))/nrow(train_data))
+# mean(y_hat_train != train_data$y)
+y_hat_train <- predict(tree_default, valid_data, type = "class")
+cm_valid <- table(valid_data$y, y_hat_train)
+error_test_a <- 1- (sum(diag(cm_valid))/nrow(valid_data))
+```
+
+The training and test errors for this model are `r round(error_train_a, 4)` and `r round(error_test_a, 4)` respectively.
+
+**2.  Second Decision Tree:**
+The second model is a decision tree with a constraint of the size of each node; In fact, the smallest allowed node size should be equal to 7000. To set this setting, we should pass `tree::tree.control(minsize = 7000)` to the `control` argument of the `tree::tree()`.
+
+```{r}
+tree_minsize <- tree(y~., train_data, control = tree.control(nrow(train_data), minsize = 7000))
+y_hat_train <- predict(tree_minsize, train_data, type = "class")
+cm_train <- table(train_data$y, y_hat_train)
+error_train_b <- 1- (sum(diag(cm_train))/nrow(train_data))
+# mean(y_hat_train != train_data$y)
+y_hat_train <- predict(tree_minsize, valid_data, type = "class")
+cm_valid <- table(valid_data$y, y_hat_train)
+error_test_b <- 1- (sum(diag(cm_valid))/nrow(valid_data))
+```
+
+The training and test errors for the second model are `r round(error_train_b, 4)` and `r round(error_test_b, 4)` respectively.
+
+
+**3. Third Decision Tree:**
+
+The third model is a decision we want to set the minimum deviance to 0.0005, and it can be done in the same way as the second model, by passing `tree::tree.control(mindev = 0.0005)` to the `control` argument of the `tree::tree()`.
+
+```{r}
+tree_mindev <- tree(y~., train_data, control = tree.control(nrow(train_data), mindev = 0.0005))
+y_hat_train <- predict(tree_mindev, train_data, type = "class")
+cm_train <- table(train_data$y, y_hat_train)
+error_train_c <- 1- (sum(diag(cm_train))/nrow(train_data))
+# mean(y_hat_train != train_data$y)
+y_hat_train <- predict(tree_mindev, valid_data, type = "class")
+cm_valid <- table(valid_data$y, y_hat_train)
+error_test_c <- 1- (sum(diag(cm_valid))/nrow(valid_data))
+```
+
+The training and test errors for the third model are `r round(error_train_c, 4)` and `r round(error_test_c, 4)` respectively.
+
+different values  | First Model | Second Model | Third Model
+------------- | ------------- | ------------- | -------------
+Size of Trees  |`r summary(tree_default)$size`|`r summary(tree_minsize)$size`|`r summary(tree_mindev)$size`
+Number of feature used|`r summary(tree_default)$used %>% length`|`r summary(tree_minsize)$used %>% length`|`r summary(tree_mindev)$used %>% length`
+Training Error  |`r round(error_train_a, 4)` |`r round(error_train_b, 4)`|`r round(error_train_c, 4)`
+Testing Error  |`r round(error_test_a, 4)` |`r round(error_test_b, 4)`|`r round(error_test_c, 4)`
+
+Based on the information in the table above, first model and second model have the same error rate. However, both the number of terminal nodes and number of feature used to split for the second model is 1 less that the first model.
+In our opinion the second model is more proper for interpreting the structure of the tree, but for predicting new values, the first model may preform better as it is more complex compare to the second model. The third model is overfitted on the training data and it is too complex; as the result, it may preform poorly for predicting new values.
+
+
+Now we can prune the more complex model, in this case the third model(minimum deviance to 0.0005), to reach to a more optimal model. By doing so, we may end up with a model which captures the general structure better than other models while it is not overfitted on the training dataset. In other words, by pruning a fully-grown tree, we are mitigating the overfitting (or high variance) problem. The following figure shows the dependence of deviances for the training and the validation data in the number of leaves:
+
+```{r}
+
+train_dev <- vector("numeric", 50)
+valid_dev <- vector("numeric", 50)
+
+for(num_leaves in 2:50){
+  prune_tree <- prune.tree(tree_mindev, best = num_leaves)
+  valid_tree <- predict(prune_tree, newdata = valid_data, type = "tree")
+  train_dev[num_leaves] <- deviance(prune_tree)
+  valid_dev[num_leaves] <- deviance(valid_tree)
+}
+
+data.frame("num_of_leaves" = 2:50, "train" = train_dev[2:50], "valid" = valid_dev[2:50]) %>%
+  ggplot() +
+  geom_line(aes(num_of_leaves, train, color = "Train Deviance")) +
+  geom_point(aes(num_of_leaves, train, color = "Train Deviance")) +
+  geom_line(aes(num_of_leaves, valid, color = "Validation Deviance")) +
+  geom_point(aes(num_of_leaves, valid, color = "Validation Deviance")) +
+  labs(x = "Number of Leaves", y = "deviance", color = "dataset")
+best_num_leaves <- which.min(valid_dev[2:50]) + 1
+optimal_tree <- prune.tree(tree_mindev, best = best_num_leaves)
+```
+
+As it is evidence in the plot, the deviance of the training data set is decreasing by increasing the number of leaves(complexity), whereas the deviance of the validation data set is decreasing at first but then it starts to increase. This denotes that the model will overfit the by increasing the number of terminal nodes.
+It worth to note that the deviance of the training data set is higher than validation dataset because deviance is proportional to the number of observations in the dataset.
+
+The best number of the leaves is `r best_num_leaves`.
+
+The important variables in the optimal tree are as follows:
+- `poutcome`
+- `month`
+- `contact`
+- `pdays`
+- `age`
+- `day`
+- `balance`
+- `housing`
+- `job`
+Also we can see the the structure of the tree:
+```{r}
+optimal_tree
+```
+
+Based on the structure of the tree, the first variable that has been used to split the data, is `poutcome` which is the outcome of the previous marketing campaign. Also it is worth to note that the variable `month` (last contact month of year) has been used frequently for splitting the data.
+
+
+For evaluating the performance of the optimal tree we can check the confusion matrix, accuracy and F1-score for the testing data. F1-score is better metric to measure the performance of the model as the target variable `y` is unbalanced.
+
+```{r}
+y_hat <- predict(optimal_tree, newdata = test_data, type = "class")
+
+cm_test <- table(test_data$y, y_hat)
+acc <- sum(diag(cm_test))/nrow(test_data)
+
+TP <- cm_test[2, 2]
+FP <- cm_test[1, 2]
+FN <- cm_test[2, 1]
+
+F1_score <- TP / (TP + 0.5 * (FP + FN))
+
+knitr::kable(cm_test, label = "the confusion matrix of optimal tree on test data")
+```
+
+The accuracy is `r round(acc, 4)` which indicates that model is very accurate in predicting new values. However, as mentioned before, since the target variable has mostly `no` values, a model which predicts all the values as `no` will yield a high accuracy as well. A good model is a model which can predict `yes` more accurately in this dataset. F1-score for this model is `r F1_score` which is very low and it indcates that model is not preforming good in predicting true positives.
+
+One way to increase the performance of the model is to use a loss matrix to predict the values based on their probabilities (instead of using 0.5 as threshold, we are using `1/5`). In other words, we are penalizing the model if it predicts positives wrongly. The confusion matrix for the testing data and using the loss matrix is as follows:
+
+
+```{r}
+y_hat <- predict(optimal_tree, newdata = test_data)
+y_hat <- as.factor(ifelse(y_hat[,2] / y_hat[,1] > 1/5, 1, 0))
+
+
+cm_test <- table(test_data$y, y_hat)
+acc <- sum(diag(cm_test))/nrow(test_data)
+
+TP <- cm_test[2, 2]
+FP <- cm_test[1, 2]
+FN <- cm_test[2, 1]
+
+F1_score <- TP / (TP + 0.5 * (FP + FN))
+
+knitr::kable(cm_test, label = "the confusion matrix of optimal tree on test data with loss matrix")
+```
+
+The new F1-score is `r F1_score` which means now the model predict true positives more accurately although the accuracy has decreased to `r round(acc, 4)`.
+
+One way to compare two different models is to use a ROC curve. Here we want to compare the optimal decision tree with a logistic regression.
+
+
+```{r}
+y_hat_prob_tree <- predict(optimal_tree, test_data)
+y_hat_prob_tree <- y_hat_prob_tree[, "yes"]
+
+glm_model <- glm(y~., family = "binomial",  data = train_data)
+y_hat_prob_glm <- predict(glm_model, test_data, type = "response")
+
+pis <- seq(0.05, 0.95, by =0.05)
+
+ROC_tree <- matrix(nrow = length(pis), ncol = 2)
+ROC_glm <- matrix(nrow = length(pis), ncol = 2)
+
+for(i in seq_along(pis)){
+  
+  y_hat_tree <- factor(ifelse(y_hat_prob_tree > pis[i], "yes", "no"), levels = c("no", "yes"))
+  cm_test <- table(test_data$y, y_hat_tree)
+  TP <- cm_test[2, 2]
+  FP <- cm_test[1, 2]
+  ROC_tree[i, 1] <- FP / sum(cm_test[1,])
+  ROC_tree[i, 2] <- TP / sum(cm_test[2,])
+  
+  y_hat_glm <- factor(ifelse(y_hat_prob_glm > pis[i], "yes", "no"), levels = c("no", "yes"))
+  cm_test <- table(test_data$y, y_hat_glm)
+  TP <- cm_test[2, 2]
+  FP <- cm_test[1, 2]
+  ROC_glm[i, 1] <- FP / sum(cm_test[1,])
+  ROC_glm[i, 2] <- TP / sum(cm_test[2,])
+  
+}
+
+plot(ROC_tree, type = "l", col = "blue", xlim = c(0, 0.8), ylim = c(0, 1), xlab = "FPR", ylab = "TPR")
+lines(ROC_glm, col = "red")
+legend(0, 1, legend=c("GLM", "Decision Tree"),
+       col=c("red", "blue"), lty = 1, cex = 0.8)
+```
+Based on the ROC curve, both models are almost preform in the same way, but decision tree is slightly better. For the same value or $\pi$ and same value of False Positive Rate (FPR), the decision tree has higher value of True Positive Rate.
+
+The precision-recall curve is a better choice to compare two models as the classes of target data is imbalanced. The model which has the higher recall for the same value of precision, is more accurate to predict positive values.
+
+
+
+\newpage
+Appendix
+-----------
+```{r,echo=TRUE,eval=FALSE} 
+#===== Assignment 1=====
+
+  #==Q1==
+  rm(list=ls())
+  library(glmnet)
+  # Split and Prepare Data
+  # --------------------------------------------------
+  # Split the Data Into Training and Testing Data
+  # (50/50):
+  tecator <- read.csv("tecator.csv")
+  set.seed(12345)
+  n = nrow(tecator)
+  id = sample(1:n, floor(n * 0.5))
+  train = tecator[id, ]
+  test = tecator[-id, ]
+
+  #=====Fit Linear Regression=====
+  lm_tecator <- lm(formula=Fat~.-Protein-Moisture-Sample,data=train)
+
+  train_fitvalues <- lm_tecator$fitted.values
+  test_predict <- predict(lm_tecator, test)
+
+
+  MSE_train <- mean(lm_tecator$residuals^2)
+  MSE_test <- mean((test$Fat-test_predict)^2)
+  
+
+  #==Q2,Q3==
+  #=====Lasso=====
+  #Make argument in the format that glmnet can use (data matrix for x)
+  x_name <- colnames(tecator)[-1]
+  x_name <- x_name[-102]
+  x_name <- x_name[-102]
+  x_name <- x_name[-101]
+  x <- data.matrix(train[, x_name])
+  y <- train$Fat
+  
+  #Train Lasso 
+  lasso_tecator <- glmnet(x=x,y=y, alpha = 1)
+  
+  plot(lasso_tecator,xvar="lambda",label = TRUE,
+    main = "Figure 1:\n\ Dependence of Lasso Regression coefficients on log(lambda) \n\n")+
+    abline(v = -0.05)+
+    abline(v = -0.35)
+  
+  #pick lambda for 3 features
+  coef_matrix <- as.matrix(coef(lasso_tecator))
+  coef_matrix <- coef_matrix!=0
+  coef_matrix <- colSums(coef_matrix)
+  lamda_index <- which(coef_matrix == 4) # we use 4 because there is alway intercept with in the matric
+  lambda_3features <- lasso_tecator$lambda[lamda_index] # the lamda for 3 features
+
+
+  #==Q4==
+  #=====Ridge======
+  ridge_tecator <- glmnet(x, y, alpha = 0)
+  plot(ridge_tecator,xvar="lambda",label = TRUE,
+      main = "Figure 2:\n\ Dependence of Ridge Regression coefficients on log(lambda) \n\n")
+
+  #==Q5==
+  cv_lasso_tecator <- cv.glmnet(x=x,y=y, alpha = 1) #Use cv.glmnet to do cross validation
+
+  plot(cv_lasso_tecator,
+     main = "Figure 3:\n Dependence of the Lasso CV score on log lambda\n\n")
+
+  best_lambda <- cv_lasso_tecator$lambda.min
+  best_model <- glmnet(x, y, alpha = 1, lambda = best_lambda)
+  variables <- coef(best_model)
+  variables <- as.vector(variables!= 0)
+  coef_index <- which(match(variables,TRUE) == 1)
+  coef_index <- coef_index[-1]
+
+  coef_get_select <- rownames(coef(best_model))[coef_index]
+  
+#===== END Assignment 1===== 
+  
+  
+```
