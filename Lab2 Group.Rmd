@@ -9,7 +9,7 @@ output: pdf_document
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 55), tidy = TRUE) #require package"formatR"
 ```
 
@@ -155,7 +155,7 @@ p
 
 ## Assignment 2
 
-```{r}
+```{r,message=FALSE}
 ## Attaching Packages
 library(tidyverse)
 library(tree)
