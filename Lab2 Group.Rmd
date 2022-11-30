@@ -385,7 +385,7 @@ The precision-recall curve is a better choice to compare two models as the class
 \newpage
 Appendix
 -----------
-```{r,echo=TRUE,eval=FALSE} 
+```{r,echo=TRUE,eval=FALSE,message=FALSE} 
 #===== Assignment 1=====
 
   #==Q1==
