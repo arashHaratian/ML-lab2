@@ -5,7 +5,7 @@ date: "2022-11-30"
 output: pdf_document
 ---
 
-**Statement of Contribution:** *Assignment 1 was contributed by Yi Hung, Assignment 2 was contributed by Arash, and Assignment 3 was contributed by Connor. Each assignment was then discussed in detail with the group before piecing together each secton of the final report.*
+**Statement of Contribution:** *Assignment 1 was contributed by Yi Hung, Assignment 2 was contributed by Arash, and Assignment 3 was contributed by Connor. Each assignment was then discussed in detail with the group before piecing together each section of the final report.*
 
 
 ```{r setup, include=FALSE}
@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 55), tidy = TRUE) #require package"formatR"
 ```
 
-# Assignment 1. Explicit regularization
+## Assignment 1. Explicit regularization
   
 For this assignment, we are given data "tecator.csv" that contains the results of study aimed to investigate whether a near
 infrared absorbance spectrum can be used to predict the fat content of samples of meat. 
@@ -155,7 +155,7 @@ p
 
 ## Assignment 2
 
-```{r,message=FALSE}
+```{r,message=FALSE, warning=FALSE}
 ## Attaching Packages
 library(tidyverse)
 library(tree)
@@ -385,7 +385,7 @@ The precision-recall curve is a better choice to compare two models as the class
 \newpage
 Appendix
 -----------
-```{r,echo=TRUE,eval=FALSE,message=FALSE} 
+```{r,echo=TRUE,eval=FALSE, message=FALSE} 
 #===== Assignment 1=====
 
   #==Q1==
@@ -467,6 +467,7 @@ Appendix
   library(tidyverse)
   library(tree)
  
+  # loading & splitting the data
   bank_full <- read.csv2("./data/bank-full.csv")
   bank_full <- bank_full %>%
   select(!duration) %>%
@@ -513,75 +514,92 @@ Appendix
   cm_valid <- table(valid_data$y, y_hat_train)
   error_test_c <- 1- (sum(diag(cm_valid))/nrow(valid_data))
   
+  # pruning the third DT
+  train_dev <- vector("numeric", 50)
+  valid_dev <- vector("numeric", 50)
+
+  for(num_leaves in 2:50){
+    prune_tree <- prune.tree(tree_mindev, best = num_leaves)
+    valid_tree <- predict(prune_tree, newdata = valid_data, type = "tree")
+    train_dev[num_leaves] <- deviance(prune_tree)
+    valid_dev[num_leaves] <- deviance(valid_tree)
+  }
+
+  data.frame("num_of_leaves" = 2:50, "train" = train_dev[2:50], "valid" = valid_dev[2:50]) %>%
+    ggplot() +
+    geom_line(aes(num_of_leaves, train, color = "Train Deviance")) +
+    geom_point(aes(num_of_leaves, train, color = "Train Deviance")) +
+    geom_line(aes(num_of_leaves, valid, color = "Validation Deviance")) +
+    geom_point(aes(num_of_leaves, valid, color = "Validation Deviance")) +
+    labs(x = "Number of Leaves", y = "deviance", color = "dataset")
+  best_num_leaves <- which.min(valid_dev[2:50]) + 1
+  optimal_tree <- prune.tree(tree_mindev, best = best_num_leaves)
+
+  #structure of tree
+  optimal_tree
+
+  # Evaluating the optimal tree
+  y_hat <- predict(optimal_tree, newdata = test_data, type = "class")
   
-train_dev <- vector("numeric", 50)
-valid_dev <- vector("numeric", 50)
-
-for(num_leaves in 2:50){
-  prune_tree <- prune.tree(tree_mindev, best = num_leaves)
-  valid_tree <- predict(prune_tree, newdata = valid_data, type = "tree")
-  train_dev[num_leaves] <- deviance(prune_tree)
-  valid_dev[num_leaves] <- deviance(valid_tree)
-}
-
-data.frame("num_of_leaves" = 2:50, "train" = train_dev[2:50], "valid" = valid_dev[2:50]) %>%
-  ggplot() +
-  geom_line(aes(num_of_leaves, train, color = "Train Deviance")) +
-  geom_point(aes(num_of_leaves, train, color = "Train Deviance")) +
-  geom_line(aes(num_of_leaves, valid, color = "Validation Deviance")) +
-  geom_point(aes(num_of_leaves, valid, color = "Validation Deviance")) +
-  labs(x = "Number of Leaves", y = "deviance", color = "dataset")
-best_num_leaves <- which.min(valid_dev[2:50]) + 1
-optimal_tree <- prune.tree(tree_mindev, best = best_num_leaves)
-
-#structure of tree
-optimal_tree
-
-y_hat <- predict(optimal_tree, newdata = test_data, type = "class")
-
-cm_test <- table(test_data$y, y_hat)
-acc <- sum(diag(cm_test))/nrow(test_data)
-
-TP <- cm_test[2, 2]
-FP <- cm_test[1, 2]
-FN <- cm_test[2, 1]
-
-F1_score <- TP / (TP + 0.5 * (FP + FN))
-
-knitr::kable(cm_test, label = "the confusion matrix of optimal tree on test data")
+  cm_test <- table(test_data$y, y_hat)
+  acc <- sum(diag(cm_test))/nrow(test_data)
   
-
-y_hat_prob_tree <- predict(optimal_tree, test_data)
-y_hat_prob_tree <- y_hat_prob_tree[, "yes"]
-
-glm_model <- glm(y~., family = "binomial",  data = train_data)
-y_hat_prob_glm <- predict(glm_model, test_data, type = "response")
-
-pis <- seq(0.05, 0.95, by =0.05)
-
-ROC_tree <- matrix(nrow = length(pis), ncol = 2)
-ROC_glm <- matrix(nrow = length(pis), ncol = 2)
-
-for(i in seq_along(pis)){
-  
-  y_hat_tree <- factor(ifelse(y_hat_prob_tree > pis[i], "yes", "no"), levels = c("no", "yes"))
-  cm_test <- table(test_data$y, y_hat_tree)
   TP <- cm_test[2, 2]
   FP <- cm_test[1, 2]
-  ROC_tree[i, 1] <- FP / sum(cm_test[1,])
-  ROC_tree[i, 2] <- TP / sum(cm_test[2,])
+  FN <- cm_test[2, 1]
   
-  y_hat_glm <- factor(ifelse(y_hat_prob_glm > pis[i], "yes", "no"), levels = c("no", "yes"))
-  cm_test <- table(test_data$y, y_hat_glm)
+  F1_score <- TP / (TP + 0.5 * (FP + FN))
+  
+  knitr::kable(cm_test, label = "the confusion matrix of optimal tree on test data")
+    
+  # Evaluating the optimal tree with loss matrix
+  y_hat <- predict(optimal_tree, newdata = test_data)
+  y_hat <- as.factor(ifelse(y_hat[,2] / y_hat[,1] > 1/5, 1, 0))
+  
+  
+  cm_test <- table(test_data$y, y_hat)
+  acc <- sum(diag(cm_test))/nrow(test_data)
+  
   TP <- cm_test[2, 2]
   FP <- cm_test[1, 2]
-  ROC_glm[i, 1] <- FP / sum(cm_test[1,])
-  ROC_glm[i, 2] <- TP / sum(cm_test[2,])
+  FN <- cm_test[2, 1]
   
-}
-
-plot(ROC_tree, type = "l", col = "blue", xlim = c(0, 0.8), ylim = c(0, 1), xlab = "FPR", ylab = "TPR")
-lines(ROC_glm, col = "red")
-legend(0, 1, legend=c("GLM", "Decision Tree"),
-       col=c("red", "blue"), lty = 1, cex = 0.8)
+  F1_score <- TP / (TP + 0.5 * (FP + FN))
+  
+  knitr::kable(cm_test, label = "the confusion matrix of optimal tree on test data with loss matrix")  
+  
+  # ROC curve
+  y_hat_prob_tree <- predict(optimal_tree, test_data)
+  y_hat_prob_tree <- y_hat_prob_tree[, "yes"]
+  
+  glm_model <- glm(y~., family = "binomial",  data = train_data)
+  y_hat_prob_glm <- predict(glm_model, test_data, type = "response")
+  
+  pis <- seq(0.05, 0.95, by =0.05)
+  
+  ROC_tree <- matrix(nrow = length(pis), ncol = 2)
+  ROC_glm <- matrix(nrow = length(pis), ncol = 2)
+  
+  for(i in seq_along(pis)){
+    
+    y_hat_tree <- factor(ifelse(y_hat_prob_tree > pis[i], "yes", "no"), levels = c("no", "yes"))
+    cm_test <- table(test_data$y, y_hat_tree)
+    TP <- cm_test[2, 2]
+    FP <- cm_test[1, 2]
+    ROC_tree[i, 1] <- FP / sum(cm_test[1,])
+    ROC_tree[i, 2] <- TP / sum(cm_test[2,])
+    
+    y_hat_glm <- factor(ifelse(y_hat_prob_glm > pis[i], "yes", "no"), levels = c("no", "yes"))
+    cm_test <- table(test_data$y, y_hat_glm)
+    TP <- cm_test[2, 2]
+    FP <- cm_test[1, 2]
+    ROC_glm[i, 1] <- FP / sum(cm_test[1,])
+    ROC_glm[i, 2] <- TP / sum(cm_test[2,])
+    
+  }
+  
+  plot(ROC_tree, type = "l", col = "blue", xlim = c(0, 0.8), ylim = c(0, 1), xlab = "FPR", ylab = "TPR")
+  lines(ROC_glm, col = "red")
+  legend(0, 1, legend=c("GLM", "Decision Tree"),
+         col=c("red", "blue"), lty = 1, cex = 0.8)
 ```
