@@ -360,7 +360,7 @@ id <- sample(1:n, floor( n * 0.5))
 train_data <- communities[id, ] 
 test_data <- communities[-id, ]
 
-scaler <- preProcess(train_data[,-101])
+scaler <- preProcess(train_data[,-101]) # we should scale target (it is written in the lab)
 train_data <- predict(scaler, train_data)
 test_data <- predict(scaler, test_data)
 
